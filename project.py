@@ -131,15 +131,7 @@ def save_to_mongodb(data):
 
 
 def migrate_to_mysql(channel_name):
-    # Create table for channel data
-    # mysql_cursor.execute("""
-    #     CREATE TABLE IF NOT EXISTS channel_data (
-    #         channel_id VARCHAR(255) PRIMARY KEY,
-    #         channel_name VARCHAR(255),
-    #         subscribers INT,
-    #         total_videos INT
-    #     );
-    # """)   
+   
     mysql_cursor.execute("""
         CREATE TABLE IF NOT EXISTS channel_data (
             channel_id VARCHAR(255) PRIMARY KEY,
