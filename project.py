@@ -6,16 +6,14 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from oauth2client.tools import argparser
 import pandas as pd
+import isodate
 
-# Set API key
 API_KEY = "AIzaSyB-xg8RyJe9Bd95t2oz4ugAQtCI2UmDv9w"
 
-# Set MongoDB connection details
 MONGODB_CONNECTION_URL = "mongodb://localhost:27017"
 MONGODB_DATABASE_NAME = "youtube_data"
 MONGODB_COLLECTION_NAME = "channel_data"
 
-# Set MySQL connection details
 MYSQL_HOST = "localhost"
 MYSQL_PORT = "3306"
 MYSQL_DATABASE = "youtube_data"
@@ -24,15 +22,12 @@ MYSQL_PASSWORD = ""
 query = ""
 
 
-# Set up YouTube API service
 youtube = build('youtube', 'v3', developerKey=API_KEY)
 
-# Connect to MongoDB
 mongo_client = pymongo.MongoClient(MONGODB_CONNECTION_URL)
 mongo_db = mongo_client[MONGODB_DATABASE_NAME]
 mongo_collection = mongo_db[MONGODB_COLLECTION_NAME]
 
-# Connect to MySQL
 mysql_conn = mysql.connector.connect(
     host=MYSQL_HOST,
     port=MYSQL_PORT,
@@ -45,13 +40,11 @@ mysql_cursor = mysql_conn.cursor()
 
 def get_channel_data(channel_id):
     try:
-        # Make API request to retrieve channel data
         channels_response = youtube.channels().list(
             part='snippet,statistics,contentDetails',
             id=channel_id
         ).execute()
 
-        # Extract relevant channel information
         channel_info = channels_response['items'][0]['snippet']
         statistics = channels_response['items'][0]['statistics']
         content_details = channels_response['items'][0]['contentDetails']
@@ -73,11 +66,10 @@ def get_channel_data(channel_id):
 
 def get_video_data(playlist_id):
     try:
-        # Make API request to retrieve videos from playlist
         playlist_response = youtube.playlistItems().list(
             part='snippet',
             playlistId=playlist_id,
-            maxResults=20
+            maxResults=5
         ).execute()
         videos = []
         for playlist_item in playlist_response['items']:
@@ -103,6 +95,9 @@ def get_video_data(playlist_id):
                     'comment_published_date': commentData['snippet']['topLevelComment']['snippet']['publishedAt'],
                 }
                 comments.append(comment_data)
+
+            duration = isodate.parse_duration(video_response['items'][0]['contentDetails']['duration'])
+            duration_seconds = duration.total_seconds()
             video_data = {
                 'video_id': video_info['resourceId']['videoId'],
                 'channel_id': video_response['items'][0]['snippet']['channelId'],
@@ -113,7 +108,7 @@ def get_video_data(playlist_id):
                 'like_count': video_response['items'][0]['statistics']['likeCount'], 
                 'favorite_count': video_response['items'][0]['statistics']['favoriteCount'], 
                 'comment_count': video_response['items'][0]['statistics']['commentCount'], 
-                'duration': video_response['items'][0]['contentDetails']['duration'], 
+                'duration': duration_seconds, 
                 'comments': comments
             }
             videos.append(video_data)
@@ -137,7 +132,7 @@ def migrate_to_mysql(channel_name):
             channel_name VARCHAR(255),
             playlist_id VARCHAR(255),
             channel_description VARCHAR(255),
-            channel_views BIGINT,
+            channel_views INT,
             channel_videocount INT
         );
     """)
@@ -149,7 +144,7 @@ def migrate_to_mysql(channel_name):
             video_name VARCHAR(255),
             video_description VARCHAR(255),
             published_date DATETIME,
-            view_count BIGINT,
+            view_count INT,
             like_count INT,
             favourite_count INT,
             comment_count INT,
@@ -200,6 +195,7 @@ def migrate_to_mysql(channel_name):
             video['duration'],
         ))
         
+        for comment in video['comments']:
             mysql_cursor.execute("""
                 INSERT INTO comment_data (comment_id, video_id, comment_text, comment_author, comment_published_date)
                 VALUES ( %s, %s, %s, %s, %s);
@@ -231,7 +227,7 @@ def display_sqltable(query_option):
         mysql_cursor.execute("""
             SELECT  channel_name,channel_videocount
             FROM channel_data 
-            WHERE channel_videocount = (SELECT MAX(channel_videocount) FROM channel_data);           
+            WHERE channel_videocount = (SELECT MAX(channel_videocount) FROM channel_data);
         """)   
         results = mysql_cursor.fetchall()
         new_frame = pd.DataFrame(results,columns = ["channel name","video count"])
@@ -283,7 +279,7 @@ def display_sqltable(query_option):
     if(query_option == "What is the total number of views for each channel, and what are their corresponding channel names?"):
         mysql_cursor.execute("""
             SELECT  channel_name,channel_views
-            FROM channel_data;            
+            FROM channel_data;
         """)   
         results = mysql_cursor.fetchall()
         new_frame = pd.DataFrame(results,columns = ["channel name","channel_views"])
@@ -301,13 +297,13 @@ def display_sqltable(query_option):
 
     if(query_option == "What is the average duration of all videos in each channel, and what are their corresponding channel names?"):
         mysql_cursor.execute("""
-            SELECT channel_data.channel_name,AVG(video_data.like_count) as average
+            SELECT channel_data.channel_name,AVG(video_data.duration) as average
             FROM channel_data
             JOIN video_data ON channel_data.channel_id = video_data.channel_id
-            GROUP BY channel_data.channel_name;         
+            GROUP BY channel_data.channel_name;
         """)           
         results = mysql_cursor.fetchall()
-        new_frame = pd.DataFrame(results)
+        new_frame = pd.DataFrame(results,columns = ["channel","average duration in seconds"])
         st.table(new_frame)
 
     if(query_option == "Which videos have the highest number of comments, and what are their corresponding channel names?"):
@@ -350,7 +346,6 @@ def main():
     "Which videos have the highest number of comments, and what are their corresponding channel names?",
     ]
 
-    index_options = list(enumerate(query_list))
     query_option = st.selectbox("Search from sql table",query_list)
     if(st.button("Search")):
         print(query_option)
