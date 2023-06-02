@@ -61,7 +61,7 @@ def get_channel_data(channel_id):
         return channel_data
 
     except HttpError as e:
-        st.error(f'An HTTP error {e.resp.status} occurred: {e.content}')
+        st.error(f'An HTTP error in get_channel_data{e.resp.status} occurred: {e.content}')
 
 
 def get_video_data(playlist_id):
@@ -79,23 +79,27 @@ def get_video_data(playlist_id):
                 part = "snippet, contentDetails, statistics",
                 id = video_info['resourceId']['videoId']
                 ).execute()
-
-            comment_response = youtube.commentThreads().list(
-                part = "snippet,replies",
-                videoId = video_info['resourceId']['videoId']
-                ).execute()
+            print(video_response)
+            print('\n\n')
+            comment_count = video_response['items'][0]['statistics']['commentCount']
             comments = []
+            # print(comment_count)
+            if (comment_count!='0'):
+                # print("fetching comments")
+                comment_response = youtube.commentThreads().list(
+                    part = "snippet,replies",
+                    videoId = video_info['resourceId']['videoId']
+                    ).execute()
 
-            for commentData in comment_response['items']:
-                comment_data = {
-                    'comment_id': commentData['id'],
-                    'video_id': commentData['snippet']['videoId'],
-                    'comment_text': commentData['snippet']['topLevelComment']['snippet']['textOriginal'],
-                    'comment_author': commentData['snippet']['topLevelComment']['snippet']['authorDisplayName'],
-                    'comment_published_date': commentData['snippet']['topLevelComment']['snippet']['publishedAt'],
-                }
-                comments.append(comment_data)
-
+                for commentData in comment_response['items']:
+                    comment_data = {
+                        'comment_id': commentData['id'],
+                        'video_id': commentData['snippet']['videoId'],
+                        'comment_text': commentData['snippet']['topLevelComment']['snippet']['textOriginal'],
+                        'comment_author': commentData['snippet']['topLevelComment']['snippet']['authorDisplayName'],
+                        'comment_published_date': commentData['snippet']['topLevelComment']['snippet']['publishedAt'],
+                    }
+                    comments.append(comment_data)
             duration = isodate.parse_duration(video_response['items'][0]['contentDetails']['duration'])
             duration_seconds = duration.total_seconds()
             video_data = {
@@ -112,11 +116,14 @@ def get_video_data(playlist_id):
                 'comments': comments
             }
             videos.append(video_data)
+            # print(video_data)
+            # print('\n\n')
+
 
         return videos
 
     except HttpError as e:
-        st.error(f'An HTTP error {e.resp.status} occurred: {e.content}')
+        st.error(f'An HTTP error in get_video_data{e.resp.status} occurred: {e.content}')
 
 
 def save_to_mongodb(data):
